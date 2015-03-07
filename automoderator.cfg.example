@@ -40,6 +40,8 @@ password = reddit_password
 report_backlog_limit_hours = 48
 reports_check_period_mins = 10
 wiki_page_name = %(username)s
+rules_wiki_page_name = AutoModRules
+constants_wiki_page_name = AutoModConstants
 last_message = 1356998400
 disclaimer = *[I am a bot](/r/AutoModerator/comments/q11pu/what_is_automoderator/), and this action was performed automatically. Please [contact the moderators of this subreddit](/message/compose?to=%%2Fr%%2F{{subreddit}}) if you have any questions or concerns.*
 owner_username = your_username

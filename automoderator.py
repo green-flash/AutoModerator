@@ -482,10 +482,75 @@ class Condition(object):
         return message
 
 
+def preprocess_constants(subreddit):
+    """Preprocesses rules/constants from the subreddit's wiki and updates AutoModerator wiki page."""
+
+    constant_wiki_page_option_present = cfg_file.has_option('reddit', 'constants_wiki_page_name')
+    rules_wiki_page_option_present = cfg_file.has_option('reddit', 'rules_wiki_page_name')
+    if not (constant_wiki_page_option_present and rules_wiki_page_option_present):
+        return False
+
+    def retrieve_wiki_page(subreddit, wiki_page_name):
+        try:
+            return subreddit.get_wiki_page(wiki_page_name)
+        except Exception:
+            logging.debug('No page found at http://www.reddit.com/r/{0}/wiki/{1}'.format(subreddit.display_name,
+                                                                                         wiki_page_name))
+
+    constants_page = retrieve_wiki_page(subreddit, cfg_file.get('reddit', 'constants_wiki_page_name'))
+    if not constants_page:
+        return False
+    rules_page = retrieve_wiki_page(subreddit, cfg_file.get('reddit', 'rules_wiki_page_name'))
+    if not rules_page:
+        return False
+
+    html_parser = HTMLParser.HTMLParser()
+    constants_page_content = html_parser.unescape(constants_page.content_md)
+    rules_page_content = html_parser.unescape(rules_page.content_md)
+
+    constants = {}
+    constant_defs = yaml.safe_load_all(constants_page_content)
+    for constants_def_group in constant_defs:
+        constants.update(constants_def_group)
+
+    def apply_constants(match):
+        result = []
+        for constant_reference in match.group(1).split(','):
+            constant_value = constants.get(constant_reference.strip(), None)
+            if constant_value:
+                if type(constant_value) is list:
+                    result += constant_value
+                else:
+                    result.append(constant_value)
+
+        if len(result) > 1:
+            return yaml.dump(result, width=5000, allow_unicode=True).rstrip().decode('utf-8')
+        elif len(result) == 1:
+            return yaml.dump(result[0], width=5000, allow_unicode=True).rstrip().decode('utf-8')
+        else:
+            return match.group(0)
+
+
+    variable_capturing_regex = re.compile(r'\${([^}]+)}', re.UNICODE)
+    processed_rules_page_content = re.sub(variable_capturing_regex, apply_constants, rules_page_content, re.UNICODE)
+
+    r.edit_wiki_page(subreddit, cfg_file.get('reddit', 'wiki_page_name'), processed_rules_page_content,
+                     'update AutoModerator page from changed rules or constants page')
+    return True
+
+
 def update_from_wiki(subreddit, requester):
     """Updates conditions from the subreddit's wiki."""
     global r
     username = cfg_file.get('reddit', 'username')
+
+    try:
+        if preprocess_constants(subreddit):
+            logging.info('Preprocessed constants from wiki in /r/{0}'.format(subreddit))
+    except Exception as e:
+        send_error_message(requester, subreddit.display_name,
+                           'Error when preprocessing constants from wiki:\n\n{0}'.format(e))
+        return False
 
     try:
         page = subreddit.get_wiki_page(cfg_file.get('reddit', 'wiki_page_name'))
